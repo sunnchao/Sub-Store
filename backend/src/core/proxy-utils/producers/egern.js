@@ -1,10 +1,12 @@
+import { isPresent } from './utils';
+
 export default function Egern_Producer() {
     const type = 'ALL';
-    const produce = (proxies, type, opts = {}) => {
+    const produce = (proxies, type) => {
         // https://egernapp.com/zh-CN/docs/configuration/proxies
         const list = proxies
             .filter((proxy) => {
-                if (opts['include-unsupported-proxy']) return true;
+                // if (opts['include-unsupported-proxy']) return true;
                 if (
                     ![
                         'http',
@@ -14,6 +16,7 @@ export default function Egern_Producer() {
                         'hysteria2',
                         'vless',
                         'vmess',
+                        'tuic',
                     ].includes(proxy.type) ||
                     (proxy.type === 'ss' &&
                         ((proxy.plugin === 'obfs' &&
@@ -47,17 +50,12 @@ export default function Egern_Producer() {
                                 'salsa20',
                                 'chacha20',
                                 'chacha20-ietf',
+                                '2022-blake3-aes-128-gcm',
+                                '2022-blake3-aes-256-gcm',
                             ].includes(proxy.cipher))) ||
                     (proxy.type === 'vmess' &&
-                        (![
-                            'auto',
-                            'aes-128-gcm',
-                            'chacha20-poly1305',
-                            'none',
-                            'zero',
-                        ].includes(proxy.cipher) ||
-                            (!['http', 'ws', 'tcp'].includes(proxy.network) &&
-                                proxy.network))) ||
+                        !['http', 'ws', 'tcp'].includes(proxy.network) &&
+                        proxy.network) ||
                     (proxy.type === 'trojan' &&
                         !['http', 'ws', 'tcp'].includes(proxy.network) &&
                         proxy.network) ||
@@ -65,13 +63,17 @@ export default function Egern_Producer() {
                         (typeof proxy.flow !== 'undefined' ||
                             proxy['reality-opts'] ||
                             (!['http', 'ws', 'tcp'].includes(proxy.network) &&
-                                proxy.network)))
+                                proxy.network))) ||
+                    (proxy.type === 'tuic' &&
+                        proxy.token &&
+                        proxy.token.length !== 0)
                 ) {
                     return false;
                 }
                 return true;
             })
             .map((proxy) => {
+                const original = { ...proxy };
                 if (proxy.tls && !proxy.sni) {
                     proxy.sni = proxy.server;
                 }
@@ -146,6 +148,23 @@ export default function Egern_Producer() {
                         proxy.obfs = 'salamander';
                         proxy.obfs_password = proxy['obfs-password'];
                     }
+                } else if (proxy.type === 'tuic') {
+                    proxy = {
+                        type: 'tuic',
+                        name: proxy.name,
+                        server: proxy.server,
+                        port: proxy.port,
+                        uuid: proxy.uuid,
+                        password: proxy.password,
+                        next_hop: proxy.next_hop,
+                        sni: proxy.sni,
+                        alpn: Array.isArray(proxy.alpn)
+                            ? proxy.alpn
+                            : [proxy.alpn || 'h3'],
+                        skip_tls_verify: proxy['skip-cert-verify'],
+                        port_hopping: proxy.ports,
+                        port_hopping_interval: proxy['hop-interval'],
+                    };
                 } else if (proxy.type === 'trojan') {
                     if (proxy.network === 'ws') {
                         proxy.websocket = {
@@ -168,6 +187,20 @@ export default function Egern_Producer() {
                         websocket: proxy.websocket,
                     };
                 } else if (proxy.type === 'vmess') {
+                    // Egern：传输层，支持 ws/wss/http1/http2/tls，不配置则为 tcp
+                    let security = proxy.cipher;
+                    if (
+                        security &&
+                        ![
+                            'auto',
+                            'none',
+                            'zero',
+                            'aes-128-gcm',
+                            'chacha20-poly1305',
+                        ].includes(security)
+                    ) {
+                        security = 'auto';
+                    }
                     if (proxy.network === 'ws') {
                         proxy.transport = {
                             [proxy.tls ? 'wss' : 'ws']: {
@@ -183,7 +216,7 @@ export default function Egern_Producer() {
                         };
                     } else if (proxy.network === 'http') {
                         proxy.transport = {
-                            http: {
+                            http1: {
                                 method: proxy['http-opts']?.method,
                                 path: proxy['http-opts']?.path,
                                 headers: {
@@ -196,9 +229,27 @@ export default function Egern_Producer() {
                                 skip_tls_verify: proxy['skip-cert-verify'],
                             },
                         };
-                    } else if (proxy.network === 'tcp' || !proxy.network) {
+                    } else if (proxy.network === 'h2') {
                         proxy.transport = {
-                            [proxy.tls ? 'tls' : 'tcp']: {
+                            http2: {
+                                method: proxy['h2-opts']?.method,
+                                path: proxy['h2-opts']?.path,
+                                headers: {
+                                    Host: Array.isArray(
+                                        proxy['h2-opts']?.headers?.Host,
+                                    )
+                                        ? proxy['h2-opts']?.headers?.Host[0]
+                                        : proxy['h2-opts']?.headers?.Host,
+                                },
+                                skip_tls_verify: proxy['skip-cert-verify'],
+                            },
+                        };
+                    } else if (
+                        (proxy.network === 'tcp' || !proxy.network) &&
+                        proxy.tls
+                    ) {
+                        proxy.transport = {
+                            tls: {
                                 sni: proxy.tls ? proxy.sni : undefined,
                                 skip_tls_verify: proxy.tls
                                     ? proxy['skip-cert-verify']
@@ -212,7 +263,7 @@ export default function Egern_Producer() {
                         server: proxy.server,
                         port: proxy.port,
                         user_id: proxy.uuid,
-                        security: proxy.cipher,
+                        security,
                         tfo: proxy.tfo || proxy['fast-open'],
                         legacy: proxy.legacy,
                         udp_relay:
@@ -277,6 +328,39 @@ export default function Egern_Producer() {
                         // sni: proxy.sni,
                         // skip_tls_verify: proxy['skip-cert-verify'],
                     };
+                }
+                if (
+                    [
+                        'http',
+                        'socks5',
+                        'ss',
+                        'trojan',
+                        'vless',
+                        'vmess',
+                    ].includes(original.type)
+                ) {
+                    if (isPresent(original, 'shadow-tls-password')) {
+                        if (original['shadow-tls-version'] != 3)
+                            throw new Error(
+                                `shadow-tls version ${original['shadow-tls-version']} is not supported`,
+                            );
+                        proxy.shadow_tls = {
+                            password: original['shadow-tls-password'],
+                            sni: original['shadow-tls-sni'],
+                        };
+                    } else if (
+                        ['shadow-tls'].includes(original.plugin) &&
+                        original['plugin-opts']
+                    ) {
+                        if (original['plugin-opts'].version != 3)
+                            throw new Error(
+                                `shadow-tls version ${original['plugin-opts'].version} is not supported`,
+                            );
+                        proxy.shadow_tls = {
+                            password: original['plugin-opts'].password,
+                            sni: original['plugin-opts'].host,
+                        };
+                    }
                 }
 
                 delete proxy.subName;

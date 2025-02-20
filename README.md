@@ -26,13 +26,13 @@ Core functionalities:
 
 ### Supported Input Formats
 
-> ⚠️ Do not use `Shadowrocket` to export URI and then import it as input. It is not a standard URI.
+> ⚠️ Do not use `Shadowrocket` or `NekoBox` to export URI and then import it as input. The URIs exported in this way may not be standard URIs.
 
-- [x] Normal Proxy(`socks5`, `socks5+tls`, `http`, `https`(it's ok))
+- [x] Proxy URI Scheme(`socks5`, `socks5+tls`, `http`, `https`(it's ok))
 
   example: `socks5+tls://user:pass@ip:port#name`
 
-- [x] URI(SS, SSR, VMess, VLESS, Trojan, Hysteria, Hysteria 2, TUIC v5, WireGuard)
+- [x] URI(SOCKS, SS, SSR, VMess, VLESS, Trojan, Hysteria, Hysteria 2, TUIC v5, WireGuard)
 - [x] Clash Proxies YAML
 - [x] Clash Proxy JSON(single line)
 - [x] QX (SS, SSR, VMess, Trojan, HTTP, SOCKS5, VLESS)

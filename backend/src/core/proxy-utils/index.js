@@ -6,6 +6,7 @@ import {
     isIPv4,
     isIPv6,
     isValidPortNumber,
+    isValidUUID,
     isNotBlank,
     ipAddress,
     getRandomPort,
@@ -21,6 +22,7 @@ import { findByName } from '@/utils/database';
 import { produceArtifact } from '@/restful/sync';
 import { getFlag, removeFlag, getISO, MMDB } from '@/utils/geo';
 import Gist from '@/utils/gist';
+import { isPresent } from './producers/utils';
 
 function preprocess(raw) {
     for (const processor of PROXY_PREPROCESSORS) {
@@ -75,7 +77,16 @@ function parse(raw) {
             $.error(`Failed to parse line: ${line}`);
         }
     }
-    return proxies;
+    return proxies.filter((proxy) => {
+        if (['vless', 'vmess'].includes(proxy.type)) {
+            const isProxyUUIDValid = isValidUUID(proxy.uuid);
+            if (!isProxyUUIDValid) {
+                $.error(`UUID is invalid: ${proxy.name} ${proxy.uuid}`);
+            }
+            return isProxyUUIDValid;
+        }
+        return true;
+    });
 }
 
 async function processFn(
@@ -214,10 +225,22 @@ function produce(proxies, targetPlatform, type, opts = {}) {
     );
 
     // filter unsupported proxies
-    proxies = proxies.filter(
-        (proxy) =>
-            !(proxy.supported && proxy.supported[targetPlatform] === false),
-    );
+    proxies = proxies.filter((proxy) => {
+        // 检查代理是否支持目标平台
+        if (proxy.supported && proxy.supported[targetPlatform] === false) {
+            return false;
+        }
+
+        // 对于 vless 和 vmess 代理,需要额外验证 UUID
+        if (['vless', 'vmess'].includes(proxy.type)) {
+            const isProxyUUIDValid = isValidUUID(proxy.uuid);
+            if (!isProxyUUIDValid)
+                $.error(`UUID is invalid: ${proxy.name} ${proxy.uuid}`);
+            return isProxyUUIDValid;
+        }
+
+        return true;
+    });
 
     proxies = proxies.map((proxy) => {
         proxy._resolved = proxy.resolved;
@@ -343,6 +366,14 @@ function lastParse(proxy) {
     if (typeof proxy.password === 'number') {
         proxy.password = numberToString(proxy.password);
     }
+    if (
+        ['ss'].includes(proxy.type) &&
+        proxy.cipher === 'none' &&
+        !proxy.password
+    ) {
+        // https://github.com/MetaCubeX/mihomo/issues/1677
+        proxy.password = '';
+    }
     if (proxy.interface) {
         proxy['interface-name'] = proxy.interface;
         delete proxy.interface;
@@ -392,9 +423,14 @@ function lastParse(proxy) {
         }
     }
     if (
-        ['trojan', 'tuic', 'hysteria', 'hysteria2', 'juicity'].includes(
-            proxy.type,
-        )
+        [
+            'trojan',
+            'tuic',
+            'hysteria',
+            'hysteria2',
+            'juicity',
+            'anytls',
+        ].includes(proxy.type)
     ) {
         proxy.tls = true;
     }
@@ -563,6 +599,20 @@ function lastParse(proxy) {
     }
     if (!proxy['tls-fingerprint'] && caStr) {
         proxy['tls-fingerprint'] = rs.generateFingerprint(caStr);
+    }
+    if (
+        ['shadowsocks'].includes(proxy.type) &&
+        isPresent(proxy, 'shadow-tls-password')
+    ) {
+        proxy.plugin = 'shadow-tls';
+        proxy['plugin-opts'] = {
+            host: proxy['shadow-tls-sni'],
+            password: proxy['shadow-tls-password'],
+            version: proxy['shadow-tls-version'],
+        };
+        delete proxy['shadow-tls-sni'];
+        delete proxy['shadow-tls-password'];
+        delete proxy['shadow-tls-version'];
     }
     return proxy;
 }

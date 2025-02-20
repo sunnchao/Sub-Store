@@ -1,4 +1,7 @@
-import { getPlatformFromHeaders } from '@/utils/user-agent';
+import {
+    getPlatformFromHeaders,
+    shouldIncludeUnsupportedProxy,
+} from '@/utils/user-agent';
 import { ProxyUtils } from '@/core/proxy-utils';
 import { COLLECTIONS_KEY, SUBS_KEY } from '@/constants';
 import { findByName } from '@/utils/database';
@@ -161,7 +164,19 @@ async function downloadSubscription(req, res) {
     }
     if (includeUnsupportedProxy) {
         includeUnsupportedProxy = decodeURIComponent(includeUnsupportedProxy);
-        $.info(`包含不支持的节点: ${includeUnsupportedProxy}`);
+        $.info(
+            `包含官方/商店版/未续费订阅不支持的协议: ${includeUnsupportedProxy}`,
+        );
+    }
+
+    if (
+        !includeUnsupportedProxy &&
+        shouldIncludeUnsupportedProxy(platform, reqUA)
+    ) {
+        includeUnsupportedProxy = true;
+        $.info(
+            `当前客户端可包含官方/商店版/未续费订阅不支持的协议: ${includeUnsupportedProxy}`,
+        );
     }
 
     if (useMihomoExternal) {
@@ -278,7 +293,10 @@ async function downloadSubscription(req, res) {
                 }
                 res.set(
                     'subscription-userinfo',
-                    [subUserInfo, flowInfo].filter((i) => i).join('; '),
+                    [subUserInfo, flowInfo]
+                        .filter((i) => i)
+                        .join('; ')
+                        .replace(/\s*;\s*;\s*/g, ';'),
                 );
             }
 
@@ -342,11 +360,9 @@ async function downloadCollection(req, res) {
 
     const allCols = $.read(COLLECTIONS_KEY);
     const collection = findByName(allCols, name);
-
+    const reqUA = req.headers['user-agent'] || req.headers['User-Agent'];
     $.info(
-        `正在下载组合订阅：${name}\n请求 User-Agent: ${
-            req.headers['user-agent'] || req.headers['User-Agent']
-        }\n请求 target: ${req.query.target}\n实际输出: ${platform}`,
+        `正在下载组合订阅：${name}\n请求 User-Agent: ${reqUA}\n请求 target: ${req.query.target}\n实际输出: ${platform}`,
     );
 
     let {
@@ -393,7 +409,18 @@ async function downloadCollection(req, res) {
 
     if (includeUnsupportedProxy) {
         includeUnsupportedProxy = decodeURIComponent(includeUnsupportedProxy);
-        $.info(`包含不支持的节点: ${includeUnsupportedProxy}`);
+        $.info(
+            `包含官方/商店版/未续费订阅不支持的协议: ${includeUnsupportedProxy}`,
+        );
+    }
+    if (
+        !includeUnsupportedProxy &&
+        shouldIncludeUnsupportedProxy(platform, reqUA)
+    ) {
+        includeUnsupportedProxy = true;
+        $.info(
+            `当前客户端可包含官方/商店版/未续费订阅不支持的协议: ${includeUnsupportedProxy}`,
+        );
     }
     if (useMihomoExternal) {
         $.info(`手动指定了 target 为 SurgeMac, 将使用 Mihomo External`);
@@ -417,6 +444,7 @@ async function downloadCollection(req, res) {
                 $options,
                 proxy,
                 noCache,
+                ua: reqUA,
             });
             let subUserInfoOfSub;
             // forward flow header from the first subscription in this collection
@@ -522,13 +550,15 @@ async function downloadCollection(req, res) {
             } else {
                 subUserInfoOfCol = collection.subUserinfo;
             }
-            res.set(
-                'subscription-userinfo',
-                [subUserInfoOfCol, subUserInfoOfSub]
-                    .filter((i) => i)
-                    .join('; '),
-            );
-
+            const subUserInfo = [subUserInfoOfCol, subUserInfoOfSub]
+                .filter((i) => i)
+                .join('; ');
+            if (subUserInfo) {
+                res.set(
+                    'subscription-userinfo',
+                    subUserInfo.replace(/\s*;\s*;\s*/g, ';'),
+                );
+            }
             if (platform === 'JSON') {
                 if (resultFormat === 'nezha') {
                     output = nezhaTransform(output);

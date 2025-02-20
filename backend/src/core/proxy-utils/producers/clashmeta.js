@@ -32,9 +32,10 @@ export default function ClashMeta_Producer() {
                         isPresent(proxy, 'cipher') &&
                         ![
                             'auto',
+                            'none',
+                            'zero',
                             'aes-128-gcm',
                             'chacha20-poly1305',
-                            'none',
                         ].includes(proxy.cipher)
                     ) {
                         proxy.cipher = 'auto';
@@ -86,6 +87,8 @@ export default function ClashMeta_Producer() {
                     proxy['preshared-key'] =
                         proxy['preshared-key'] ?? proxy['pre-shared-key'];
                     proxy['pre-shared-key'] = proxy['preshared-key'];
+                } else if (proxy.type === 'snell' && proxy.version < 3) {
+                    delete proxy.udp;
                 } else if (proxy.type === 'vless') {
                     if (isPresent(proxy, 'sni')) {
                         proxy.servername = proxy.sni;
@@ -157,6 +160,7 @@ export default function ClashMeta_Producer() {
                         'hysteria',
                         'hysteria2',
                         'juicity',
+                        'anytls',
                     ].includes(proxy.type)
                 ) {
                     delete proxy.tls;
@@ -180,7 +184,7 @@ export default function ClashMeta_Producer() {
                 delete proxy.id;
                 delete proxy.resolved;
                 delete proxy['no-resolve'];
-                if (type !== 'internal') {
+                if (type !== 'internal' || opts['delete-underscore-fields']) {
                     for (const key in proxy) {
                         if (proxy[key] == null || /^_/i.test(key)) {
                             delete proxy[key];

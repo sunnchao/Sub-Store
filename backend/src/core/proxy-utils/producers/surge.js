@@ -53,7 +53,7 @@ export default function Surge_Producer() {
     return { produce };
 }
 
-function shadowsocks(proxy, includeUnsupportedProxy) {
+function shadowsocks(proxy) {
     const result = new Result(proxy);
     result.append(`${proxy.name}=${proxy.type},${proxy.server},${proxy.port}`);
     if (!proxy.cipher) {
@@ -87,9 +87,8 @@ function shadowsocks(proxy, includeUnsupportedProxy) {
             'chacha20',
             'chacha20-ietf',
             'none',
-            ...(includeUnsupportedProxy
-                ? ['2022-blake3-aes-128-gcm', '2022-blake3-aes-256-gcm']
-                : []),
+            '2022-blake3-aes-128-gcm',
+            '2022-blake3-aes-256-gcm',
         ].includes(proxy.cipher)
     ) {
         throw new Error(`cipher ${proxy.cipher} is not supported`);
@@ -127,8 +126,6 @@ function shadowsocks(proxy, includeUnsupportedProxy) {
 
     // udp
     result.appendIfPresent(`,udp-relay=${proxy.udp}`, 'udp');
-    // udp-port
-    result.appendIfPresent(`,udp-port=${proxy['udp-port']}`, 'udp-port');
 
     // test-url
     result.appendIfPresent(`,test-url=${proxy['test-url']}`, 'test-url');
@@ -160,6 +157,8 @@ function shadowsocks(proxy, includeUnsupportedProxy) {
             `,shadow-tls-sni=${proxy['shadow-tls-sni']}`,
             'shadow-tls-sni',
         );
+        // udp-port
+        result.appendIfPresent(`,udp-port=${proxy['udp-port']}`, 'udp-port');
     } else if (['shadow-tls'].includes(proxy.plugin) && proxy['plugin-opts']) {
         const password = proxy['plugin-opts'].password;
         const host = proxy['plugin-opts'].host;
@@ -177,6 +176,11 @@ function shadowsocks(proxy, includeUnsupportedProxy) {
                 }
                 result.append(`,shadow-tls-version=${version}`);
             }
+            // udp-port
+            result.appendIfPresent(
+                `,udp-port=${proxy['udp-port']}`,
+                'udp-port',
+            );
         }
     }
 

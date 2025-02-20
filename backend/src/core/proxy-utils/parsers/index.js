@@ -11,6 +11,7 @@ import getSurgeParser from './peggy/surge';
 import getLoonParser from './peggy/loon';
 import getQXParser from './peggy/qx';
 import getTrojanURIParser from './peggy/trojan-uri';
+import $ from '@/core/app';
 
 import { Base64 } from 'js-base64';
 
@@ -40,8 +41,21 @@ function URI_PROXY() {
         // eslint-disable-next-line no-unused-vars
         let [__, type, tls, username, password, server, port, query, name] =
             line.match(
-                /^(socks5|http|http)(\+tls|s)?:\/\/(?:(.*?):(.*?)@)?(.*?):(\d+?)(\?.*?)?(?:#(.*?))?$/,
+                /^(socks5|http|http)(\+tls|s)?:\/\/(?:(.*?):(.*?)@)?(.*?)(?::(\d+?))?(\?.*?)?(?:#(.*?))?$/,
             );
+        if (port) {
+            port = parseInt(port, 10);
+        } else {
+            if (tls) {
+                port = 443;
+            } else if (type === 'http') {
+                port = 80;
+            } else {
+                $.error(`port is not present in line: ${line}`);
+                throw new Error(`port is not present in line: ${line}`);
+            }
+            $.info(`port is not present in line: ${line}, set to ${port}`);
+        }
 
         const proxy = {
             name:
@@ -62,7 +76,46 @@ function URI_PROXY() {
     };
     return { name, test, parse };
 }
+function URI_SOCKS() {
+    const name = 'URI SOCKS Parser';
+    const test = (line) => {
+        return /^socks:\/\//.test(line);
+    };
+    const parse = (line) => {
+        // parse url
+        // eslint-disable-next-line no-unused-vars
+        let [__, type, auth, server, port, query, name] = line.match(
+            /^(socks)?:\/\/(?:(.*)@)?(.*?)(?::(\d+?))?(\?.*?)?(?:#(.*?))?$/,
+        );
+        if (port) {
+            port = parseInt(port, 10);
+        } else {
+            $.error(`port is not present in line: ${line}`);
+            throw new Error(`port is not present in line: ${line}`);
+        }
+        let username, password;
+        if (auth) {
+            const parsed = Base64.decode(decodeURIComponent(auth)).split(':');
+            username = parsed[0];
+            password = parsed[1];
+        }
 
+        const proxy = {
+            name:
+                name != null
+                    ? decodeURIComponent(name)
+                    : `${type} ${server}:${port}`,
+            type: 'socks5',
+            server,
+            port,
+            username,
+            password,
+        };
+
+        return proxy;
+    };
+    return { name, test, parse };
+}
 // Parse SS URI format (only supports new SIP002, legacy format is depreciated).
 // reference: https://github.com/shadowsocks/shadowsocks-org/wiki/SIP002-URI-Scheme
 function URI_SS() {
@@ -99,6 +152,7 @@ function URI_SS() {
                 query = parsed[2];
             }
             content = Base64.decode(content);
+
             if (query) {
                 if (/(&|\?)v2ray-plugin=/.test(query)) {
                     const parsed = query.match(/(&|\?)v2ray-plugin=(.*?)(&|$)/);
@@ -112,8 +166,11 @@ function URI_SS() {
                 }
                 content = `${content}${query}`;
             }
-            userInfoStr = content.split('@')[0];
-            serverAndPortArray = content.match(/@([^/]*)(\/|$)/);
+            userInfoStr = content.match(/(^.*)@/)?.[1];
+            serverAndPortArray = content.match(/@([^/@]*)(\/|$)/);
+        } else if (content.includes('?')) {
+            const parsed = content.match(/(\?.*)$/);
+            query = parsed[1];
         }
 
         const serverAndPort = serverAndPortArray[1];
@@ -132,11 +189,10 @@ function URI_SS() {
         // }
 
         // handle obfs
-        const idx = content.indexOf('?plugin=');
-        if (idx !== -1) {
+        const pluginMatch = content.match(/[?&]plugin=([^&]+)/);
+        if (pluginMatch) {
             const pluginInfo = (
-                'plugin=' +
-                decodeURIComponent(content.split('?plugin=')[1].split('&')[0])
+                'plugin=' + decodeURIComponent(pluginMatch[1])
             ).split(';');
             const params = {};
             for (const item of pluginInfo) {
@@ -161,6 +217,16 @@ function URI_SS() {
                         tls: getIfPresent(params.tls),
                     };
                     break;
+                case 'shadow-tls': {
+                    proxy.plugin = 'shadow-tls';
+                    const version = getIfNotBlank(params['version']);
+                    proxy['plugin-opts'] = {
+                        host: getIfNotBlank(params['host']),
+                        password: getIfNotBlank(params['password']),
+                        version: version ? parseInt(version, 10) : undefined,
+                    };
+                    break;
+                }
                 default:
                     throw new Error(
                         `Unsupported plugin option: ${params.plugin}`,
@@ -529,6 +595,9 @@ function URI_VLESS() {
             if (params.sid) {
                 opts['short-id'] = params.sid;
             }
+            if (params.spx) {
+                opts['_spider-x'] = params.spx;
+            }
             if (Object.keys(opts).length > 0) {
                 // proxy[`${params.security}-opts`] = opts;
                 proxy[`${params.security}-opts`] = opts;
@@ -595,6 +664,13 @@ function URI_VLESS() {
                 }
                 // mKCP 的伪装头部类型。当前可选值有 none / srtp / utp / wechat-video / dtls / wireguard。省略时默认值为 none，即不使用伪装头部，但不可以为空字符串。
                 proxy.headerType = params.headerType || 'none';
+            }
+
+            if (params.mode) {
+                proxy._mode = params.mode;
+            }
+            if (params.extra) {
+                proxy._extra = params.extra;
             }
         }
 
@@ -763,8 +839,11 @@ function URI_TUIC() {
     const parse = (line) => {
         line = line.split(/tuic:\/\//)[1];
         // eslint-disable-next-line no-unused-vars
-        let [__, uuid, password, server, ___, port, ____, addons = '', name] =
-            /^(.*?):(.*?)@(.*?)(:(\d+))?\/?(\?(.*?))?(?:#(.*?))?$/.exec(line);
+        let [__, auth, server, port, addons = '', name] =
+            /^(.*?)@(.*?)(?::(\d+))?\/?(?:\?(.*?))?(?:#(.*?))?$/.exec(line);
+        auth = decodeURIComponent(auth);
+        let [uuid, ...passwordParts] = auth.split(':');
+        let password = passwordParts.join(':');
         port = parseInt(`${port}`, 10);
         if (isNaN(port)) {
             port = 443;
@@ -786,12 +865,14 @@ function URI_TUIC() {
 
         for (const addon of addons.split('&')) {
             let [key, value] = addon.split('=');
-            key = key.replace(/_/, '-');
+            key = key.replace(/_/g, '-');
             value = decodeURIComponent(value);
             if (['alpn'].includes(key)) {
                 proxy[key] = value ? value.split(',') : undefined;
             } else if (['allow-insecure'].includes(key)) {
                 proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
+            } else if (['fast-open'].includes(key)) {
+                proxy.tfo = true;
             } else if (['disable-sni', 'reduce-rtt'].includes(key)) {
                 proxy[key] = /(TRUE)|1/i.test(value);
             } else {
@@ -929,6 +1010,7 @@ function Clash_All() {
         const proxy = JSON.parse(line);
         if (
             ![
+                'anytls',
                 'mieru',
                 'juicity',
                 'ss',
@@ -1431,6 +1513,7 @@ function isIP(ip) {
 
 export default [
     URI_PROXY(),
+    URI_SOCKS(),
     URI_SS(),
     URI_SSR(),
     URI_VMess(),
