@@ -123,10 +123,10 @@ export default function Egern_Producer() {
                             proxy.udp || proxy.udp_relay || proxy.udp_relay,
                         next_hop: proxy.next_hop,
                     };
-                    if (proxy.plugin === 'obfs') {
-                        proxy.obfs = proxy['plugin-opts'].mode;
-                        proxy.obfs_host = proxy['plugin-opts'].host;
-                        proxy.obfs_uri = proxy['plugin-opts'].path;
+                    if (original.plugin === 'obfs') {
+                        proxy.obfs = original['plugin-opts'].mode;
+                        proxy.obfs_host = original['plugin-opts'].host;
+                        proxy.obfs_uri = original['plugin-opts'].path;
                     }
                 } else if (proxy.type === 'hysteria2') {
                     proxy = {
@@ -144,9 +144,12 @@ export default function Egern_Producer() {
                         port_hopping: proxy.ports,
                         port_hopping_interval: proxy['hop-interval'],
                     };
-                    if (proxy['obfs-password'] && proxy.obfs == 'salamander') {
+                    if (
+                        original['obfs-password'] &&
+                        original.obfs == 'salamander'
+                    ) {
                         proxy.obfs = 'salamander';
-                        proxy.obfs_password = proxy['obfs-password'];
+                        proxy.obfs_password = original['obfs-password'];
                     }
                 } else if (proxy.type === 'tuic') {
                     proxy = {
@@ -218,7 +221,9 @@ export default function Egern_Producer() {
                         proxy.transport = {
                             http1: {
                                 method: proxy['http-opts']?.method,
-                                path: proxy['http-opts']?.path,
+                                path: Array.isArray(proxy['http-opts']?.path)
+                                    ? proxy['http-opts']?.path[0]
+                                    : proxy['http-opts']?.path,
                                 headers: {
                                     Host: Array.isArray(
                                         proxy['http-opts']?.headers?.Host,
@@ -233,7 +238,9 @@ export default function Egern_Producer() {
                         proxy.transport = {
                             http2: {
                                 method: proxy['h2-opts']?.method,
-                                path: proxy['h2-opts']?.path,
+                                path: Array.isArray(proxy['h2-opts']?.path)
+                                    ? proxy['h2-opts']?.path[0]
+                                    : proxy['h2-opts']?.path,
                                 headers: {
                                     Host: Array.isArray(
                                         proxy['h2-opts']?.headers?.Host,
@@ -291,7 +298,9 @@ export default function Egern_Producer() {
                         proxy.transport = {
                             http: {
                                 method: proxy['http-opts']?.method,
-                                path: proxy['http-opts']?.path,
+                                path: Array.isArray(proxy['http-opts']?.path)
+                                    ? proxy['http-opts']?.path[0]
+                                    : proxy['http-opts']?.path,
                                 headers: {
                                     Host: Array.isArray(
                                         proxy['http-opts']?.headers?.Host,

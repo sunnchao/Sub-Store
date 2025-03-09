@@ -24,6 +24,10 @@ function operator(proxies = [], targetPlatform, context) {
   // 16. `sing-box` 支持使用 `_network` 来设置 `network`, 例如 `tcp`, `udp`
 
   // require 为 Node.js 的 require, 在 Node.js 运行环境下 可以用来引入模块
+  // 例如在 Node.js 环境下, 将文件内容写入 /tmp/1.txt 文件
+  // const fs = eval(`require("fs")`)
+  // // const path = eval(`require("path")`)
+  // fs.writeFileSync('/tmp/1.txt', $content, "utf8");
 
   // $arguments 为传入的脚本参数
 
@@ -48,8 +52,32 @@ function operator(proxies = [], targetPlatform, context) {
   // scriptResourceCache 缓存
   // 可参考 https://t.me/zhetengsha/1003
   // const cache = scriptResourceCache
-  // cache.set(id, data)
-  // cache.get(id)
+  // 设置
+  // cache.set('a:1', 1)
+  // cache.set('a:2', 2)
+  // 获取
+  // cache.get('a:1')
+  // 支持第二个参数: 自定义过期时间
+  // 支持第三个参数: 是否删除过期项
+  // cache.get('a:2', 1000, true)
+
+  // 清理
+  // cache._cleanup()
+  // 支持第一个参数: 匹配前缀的项也一起删除
+  // 支持第二个参数: 自定义过期时间
+  // cache._cleanup('a:', 1000)
+
+  // 关于缓存时长
+
+  // 拉取 Sub-Store 订阅时, 会自动拉取远程订阅
+
+  // 远程订阅缓存是 1 小时, 缓存的唯一 key 为 url+ user agent. 可通过前端的刷新按钮刷新缓存. 或使用参数 noCache 来禁用缓存. 例: 内部配置订阅链接时使用 http://a.com#noCache, 外部使用 sub-store 链接时使用 https://sub.store/download/1?noCache=true
+
+  // 当使用相关脚本时, 若在对应的脚本中使用参数开启缓存, 可设置持久化缓存 sub-store-csr-expiration-time 的值来自定义默认缓存时长, 默认为 172800000 (48 * 3600 * 1000, 即 48 小时)
+
+  // 🎈Loon 可在插件中设置
+
+  // 其他平台同理, 持久化缓存数据在 JSON 里
 
   // ProxyUtils 为节点处理工具
   // 可参考 https://t.me/zhetengsha/1066
@@ -69,6 +97,7 @@ function operator(proxies = [], targetPlatform, context) {
   //     Gist, // Gist 类
   //     download, // 内部的下载方法, 见 backend/src/utils/download.js
   //     MMDB, // Node.js 环境 可用于模拟 Surge/Loon 的 $utils.ipasn, $utils.ipaso, $utils.geoip. 具体见 https://t.me/zhetengsha/1269
+  //     isValidUUID, // 辅助判断是否为有效的 UUID
   // }
 
   // 如果只是为了快速修改或者筛选 可以参考 脚本操作支持节点快捷脚本 https://t.me/zhetengsha/970 和 脚本筛选支持节点快捷脚本 https://t.me/zhetengsha/1009

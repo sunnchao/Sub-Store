@@ -20,6 +20,7 @@ import {
     validCheck,
     flowTransfer,
     getRmainingDays,
+    normalizeFlowHeader,
 } from '@/utils/flow';
 
 function isObject(item) {
@@ -365,24 +366,35 @@ function ScriptOperator(script, targetPlatform, $arguments, source, $options) {
             if (output?.$file?.type === 'mihomoProfile') {
                 try {
                     let patch = YAML.safeLoad(script);
+                    let config;
+                    if (output?.$content) {
+                        try {
+                            config = YAML.safeLoad(output?.$content);
+                        } catch (e) {
+                            $.error(e.message ?? e);
+                        }
+                    }
                     // if (typeof patch !== 'object') patch = {};
                     if (typeof patch !== 'object')
                         throw new Error('patch is not an object');
                     output.$content = ProxyUtils.yaml.safeDump(
                         deepMerge(
-                            {
-                                proxies: await produceArtifact({
-                                    type:
-                                        output?.$file?.sourceType ||
-                                        'collection',
-                                    name: output?.$file?.sourceName,
-                                    platform: 'mihomo',
-                                    produceType: 'internal',
-                                    produceOpts: {
-                                        'delete-underscore-fields': true,
-                                    },
-                                }),
-                            },
+                            config ||
+                                (output?.$file?.sourceType === 'none'
+                                    ? {}
+                                    : {
+                                          proxies: await produceArtifact({
+                                              type:
+                                                  output?.$file?.sourceType ||
+                                                  'collection',
+                                              name: output?.$file?.sourceName,
+                                              platform: 'mihomo',
+                                              produceType: 'internal',
+                                              produceOpts: {
+                                                  'delete-underscore-fields': true,
+                                              },
+                                          }),
+                                      }),
                             patch,
                         ),
                     );
@@ -413,7 +425,15 @@ function ScriptOperator(script, targetPlatform, $arguments, source, $options) {
                             if($file.type === 'mihomoProfile') {
                                 ${script}
                                 if(typeof main === 'function') {
-                                    const config = {
+                                    let config;
+                                    if ($content) {
+                                        try {
+                                            config = ProxyUtils.yaml.safeLoad($content);
+                                        } catch (e) {
+                                            console.log(e.message ?? e);
+                                        }
+                                    }
+                                    $content = ProxyUtils.yaml.safeDump(await main(config || ($file.sourceType === 'none' ? {} : {
                                         proxies: await produceArtifact({
                                             type: $file.sourceType || 'collection',
                                             name: $file.sourceName,
@@ -423,8 +443,7 @@ function ScriptOperator(script, targetPlatform, $arguments, source, $options) {
                                                 'delete-underscore-fields': true
                                             }
                                         }),
-                                    }
-                                    $content = ProxyUtils.yaml.safeDump(await main(config))
+                                    })))
                                 }
                             } else {
                                 ${script}
@@ -830,7 +849,12 @@ function UselessFilter() {
 }
 
 // filter by regions
-function RegionFilter(regions) {
+function RegionFilter(input) {
+    let regions = input?.value || input;
+    if (!Array.isArray(regions)) {
+        regions = [];
+    }
+    const keep = input?.keep ?? true;
     const REGION_MAP = {
         HK: '🇭🇰',
         TW: '🇹🇼',
@@ -847,7 +871,8 @@ function RegionFilter(regions) {
             // this would be high memory usage
             return proxies.map((proxy) => {
                 const flag = getFlag(proxy.name);
-                return regions.some((r) => REGION_MAP[r] === flag);
+                const selected = regions.some((r) => REGION_MAP[r] === flag);
+                return keep ? selected : !selected;
             });
         },
     };
@@ -879,11 +904,19 @@ function buildRegex(str, ...options) {
 }
 
 // filter by proxy types
-function TypeFilter(types) {
+function TypeFilter(input) {
+    let types = input?.value || input;
+    if (!Array.isArray(types)) {
+        types = [];
+    }
+    const keep = input?.keep ?? true;
     return {
         name: 'Type Filter',
         func: (proxies) => {
-            return proxies.map((proxy) => types.some((t) => proxy.type === t));
+            return proxies.map((proxy) => {
+                const selected = types.some((t) => proxy.type === t);
+                return keep ? selected : !selected;
+            });
         },
     };
 }
@@ -1083,6 +1116,7 @@ function createDynamicFunction(name, script, $arguments, $options) {
         flowTransfer,
         validCheck,
         getRmainingDays,
+        normalizeFlowHeader,
     };
     if ($.env.isLoon) {
         return new Function(
